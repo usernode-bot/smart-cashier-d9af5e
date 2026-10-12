@@ -1,0 +1,15 @@
+{
+  "note": "The featured card this app's creator was shown while it was being made: its emoji (also the app's icon, set in dapp.json), a tagline and a few points that sum up the description in a few words. It is a picture of the idea, not a design: it shows no screen and sets no layout, words or colours. Build from the description in the first version's request; where the two differ, the description wins.",
+  "kind": "featured-card",
+  "emoji": "🧾",
+  "tagline": "Point of sale for small merchants, with staff roles",
+  "points": [
+    "Cashier screen for taking payments",
+    "Finance summary, transactions and payouts",
+    "Insights on how the business is doing",
+    "Owner, manager and cashier roles you set"
+  ],
+  "source": "model",
+  "model": "claude-haiku-5-5",
+  "createdAt": "2026-10-12T07:08:41.900Z"
+}

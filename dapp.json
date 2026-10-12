@@ -1,0 +1,10 @@
+{
+  "description": "Point of sale for small merchants, with staff roles",
+  "icon": {
+    "emoji": "🧾"
+  },
+  "secrets": [],
+  "governance": {
+    "preset": "you_or_the_group"
+  }
+}
