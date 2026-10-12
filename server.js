@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
+const oauth = require('./lib/oauth');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -35,7 +36,13 @@ const GUEST_PUBLIC_KEY = (process.env.USERNODE_GUEST_JWT_PUBLIC_KEY || '')
 // Paths that stay open without authentication. Add a path here (and add it
 // with `app.get`/`app.post` below) if you deliberately want it public.
 // Everything else requires a valid platform-issued JWT.
-const PUBLIC_API_PATHS = new Set(['/health']);
+const PUBLIC_API_PATHS = new Set([
+  '/health',
+  // The OAuth round-trip: the provider's redirect lands here with no
+  // platform token by definition.
+  '/api/auth/oauth/signin',
+  '/api/auth/oauth/callback',
+]);
 
 app.use(express.json());
 
@@ -100,7 +107,7 @@ function requestNow(req) {
 // anything not explicitly marked public. The iframe adds `?token=…`
 // on load; the frontend script forwards the token via `x-usernode-token`
 // on subsequent fetches.
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   req.now = requestNow(req);
   const token = req.query.token || req.headers['x-usernode-token'];
   if (token && JWT_PUBLIC_KEY && APP_AUDIENCE) {
@@ -118,6 +125,29 @@ app.use((req, res, next) => {
       if (claims && claims.pur === 'iframe') req.user = claims;
     } catch {}
   }
+  // The app's own session cookie (social sign-in at the app's own address).
+  // The platform token always wins; the cookie only fills the gap. Before
+  // the key has loaded at boot, cookies are ignored.
+  if (!req.user) {
+    const cookies = oauth.parseCookies(req.headers.cookie || '');
+    const sess = cookies[oauth.SESSION_COOKIE];
+    if (sess && oauth.sessionReady()) {
+      const claims = oauth.verifySession(sess, oauth.getSessionKey());
+      if (claims) {
+        try {
+          const row = (await pool.query(
+            `SELECT id, user_id, username, provider FROM social_identities WHERE id = $1 AND user_id = $2`,
+            [claims.sid, claims.sub])).rows[0];
+          if (row) {
+            req.user = {
+              id: row.user_id, username: row.username,
+              usernode_pubkey: null, locale: null, via: row.provider,
+            };
+          }
+        } catch (_) { /* treat as signed out */ }
+      }
+    }
+  }
   if (!req.user && token && GUEST_PUBLIC_KEY && GUEST_AUDIENCE) {
     try {
       const guest = jwt.verify(token, GUEST_PUBLIC_KEY, {
@@ -127,6 +157,12 @@ app.use((req, res, next) => {
       });
       if (guest && guest.pur === 'guest' && guest.guest === true) req.guest = true;
     } catch {}
+  }
+  // A write made with only the cookie (no platform token) must come from
+  // this app's own origin: a cross-site form or script cannot set Origin.
+  if (req.user && req.user.via && req.method !== 'GET' && req.method !== 'HEAD'
+      && !oauth.sameOriginWrite(req)) {
+    return res.status(403).json({ error: 'bad_origin' });
   }
 
   // Static assets (CSS/JS/images) are always served; the API and the HTML
@@ -151,9 +187,16 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 const ensureSchema = require('./lib/schema');
 const { createApi } = require('./lib/api');
 const ensureDemoShop = require('./lib/demo');
+// Social sign-in routes, before the main API (its own path space).
+app.use('/api/auth/oauth', oauth.createOAuthRouter(pool));
 app.use('/api', createApi(pool, ensureDemoShop));
 
-ensureSchema(pool).catch((err) => { console.error('schema failed', err); process.exit(1); });
+// The session-cookie signing key lives in app_keys: created once at boot
+// (after the schema that holds it), read back after, and cookies are
+// ignored until it is loaded.
+ensureSchema(pool)
+  .then(() => oauth.ensureSessionKey(pool))
+  .catch((err) => { console.error('schema failed', err); process.exit(1); });
 
 // The template ships no favicon file; index.html carries an inline SVG
 // icon instead. Answer 204 here so anything that still probes
@@ -184,15 +227,23 @@ app.get('*', (req, res) => {
     // unusual falls back to the bare link.
     const deepPath = /^\/[A-Za-z0-9\-._~!$&()*+,;=:@\/%?]*$/.test(req.originalUrl)
       ? '?path=' + encodeURIComponent(req.originalUrl) : '';
-    if (PLATFORM_ORIGIN && req.get('sec-fetch-dest') === 'document') {
+    // When a social provider is set up, a fresh document visit gets the
+    // landing page — which gains a social sign-in choice beside Open in
+    // Homeroom — instead of being sent straight to the platform: the
+    // choice is the point. With none set up, behaviour is unchanged.
+    const social = oauth.configuredProviders();
+    if (PLATFORM_ORIGIN && req.get('sec-fetch-dest') === 'document' && !social.length) {
       return res.redirect(302, PLATFORM_ORIGIN + '/app/smart-cashier-d9af5e/full' + deepPath);
     }
+    const socialLinks = social.map((p) =>
+      ` <a href="/api/auth/oauth/signin?provider=${p}" style="display:inline-block;padding:0.5rem 1rem;border:1px solid #3f3f46;color:#e4e4e7;border-radius:0.5rem;text-decoration:none;font-size:0.9rem">Continue with ${p[0].toUpperCase() + p.slice(1)}</a>`).join('\n    ');
     return res.status(401).send(`<!doctype html><meta charset=utf-8><title>Open in Homeroom</title>
 <body style="font-family:system-ui;background:#09090b;color:#e4e4e7;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">
   <div style="max-width:24rem;padding:2rem;text-align:center">
     <h1 style="font-size:1.25rem;margin:0 0 0.5rem">Open this app inside Homeroom</h1>
     <p style="color:#a1a1aa;font-size:0.9rem;margin:0 0 1.25rem">This page is served via the platform; direct visits aren't authenticated.</p>
     <a href="${PLATFORM_ORIGIN}/app/smart-cashier-d9af5e/full${deepPath}" style="display:inline-block;padding:0.5rem 1rem;background:#7c3aed;color:white;border-radius:0.5rem;text-decoration:none;font-size:0.9rem">Open in Homeroom</a>
+    ${socialLinks}
   </div>
 </body>`);
   }
