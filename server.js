@@ -147,6 +147,14 @@ app.use((req, res, next) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Smart Cashier's own API and schema.
+const ensureSchema = require('./lib/schema');
+const { createApi } = require('./lib/api');
+const ensureDemoShop = require('./lib/demo');
+app.use('/api', createApi(pool, ensureDemoShop));
+
+ensureSchema(pool).catch((err) => { console.error('schema failed', err); process.exit(1); });
+
 // The template ships no favicon file; index.html carries an inline SVG
 // icon instead. Answer 204 here so anything that still probes
 // /favicon.ico (older browsers, direct visits) doesn't fall through to
@@ -195,6 +203,24 @@ async function start() {
   const server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
+
+  // Drain on shutdown: stop taking requests, give in-flight ones 3 s, then
+  // close the pool. /health answers 503 while shutting down so the
+  // platform stops routing here immediately.
+  let draining = false;
+  app.use((_req, res) => res.status(503).json({ error: 'shutting_down' }));
+  const drain = async () => {
+    if (draining) return;
+    draining = true;
+    console.log('draining');
+    server.close(() => {});
+    setTimeout(() => {}, 0);
+    await new Promise((r) => setTimeout(r, 3000));
+    try { await pool.end(); } catch (_) {}
+    process.exit(0);
+  };
+  process.on('SIGTERM', drain);
+  process.on('SIGINT', drain);
 }
 
 start().catch(err => { console.error(err); process.exit(1); });
