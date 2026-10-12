@@ -228,16 +228,40 @@ function switchRow(labelText, checked, onChange, desc) {
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────
+// Grey shapes standing where the register will appear, while /api/me runs:
+// shop name line, chip row, a 3-across grid of tile shapes, the docked
+// receipt with a Charge-shaped bar.
+function renderBootSkeleton() {
+  const root = document.getElementById('app');
+  const paper = el('div', 'receipt flex flex-col border-t border-line', {},
+    el('div', 'skeleton h-4 w-28'),
+    el('div', 'skeleton mt-2 h-11 w-full'),
+    el('div', 'skeleton h-11 w-3/4'),
+    el('div', 'mt-2 flex items-baseline justify-between border-t-2 border-dashed border-muted/50 pt-2.5', {},
+      el('div', 'skeleton h-4 w-12'),
+      el('div', 'skeleton h-7 w-28')),
+    el('div', 'skeleton mt-3 h-[52px] w-full rounded-lg'));
+  root.replaceChildren(el('div', 'flex h-dvh flex-col overflow-hidden', {},
+    el('div', 'px-4 pb-3 pt-4', {},
+      el('div', 'skeleton h-6 w-44'),
+      el('div', 'skeleton mt-2 h-3.5 w-28')),
+    el('div', 'flex shrink-0 gap-2 overflow-hidden px-4 py-3', {},
+      ...Array.from({ length: 4 }, () => el('div', 'skeleton h-11 w-20 shrink-0 rounded-full'))),
+    el('div', 'min-h-0 flex-1 overflow-hidden px-4', {},
+      el('div', 'grid grid-cols-3 gap-2 md:grid-cols-4 xl:grid-cols-6', {},
+        ...Array.from({ length: 9 }, () => el('div', 'skeleton h-[108px] rounded-xl')))),
+    el('div', 'shrink-0 px-4 pb-3 pt-2', {}, paper)));
+}
+
 async function boot() {
   const root = document.getElementById('app');
-  clear(root);
-  root.append(el('div', 'flex min-h-screen items-center justify-center', {},
-    el('div', 'skeleton h-12 w-40'))); // loading shapes while /api/me runs
+  renderBootSkeleton(); // loading shapes while /api/me runs
   let me;
   try {
     me = await api('/me');
   } catch (err) {
-    root.replaceChildren(errorState('Couldn’t reach the server. The register is offline.', () => boot()));
+    root.replaceChildren(errorState('Couldn’t load the register',
+      'The server didn’t answer. Nothing was lost — try again.', () => boot(), true));
     return;
   }
   state.me = me;
@@ -258,11 +282,15 @@ async function boot() {
   window.addEventListener('hashchange', route);
 }
 
-function errorState(message, retry) {
-  const box = el('div', 'state-error', {},
-    el('p', 'text-body text-fg', { text: message }),
-    el('button', 'btn-secondary', { text: 'Retry', onclick: retry }));
-  return box;
+// A load failure: a centred block with a heading-size line, one small muted
+// line saying what failed, and a full-width accent Retry button. `full`
+// centres it in the whole viewport (the boot error); otherwise it sits
+// where the screen's content would.
+function errorState(title, detail, retry, full) {
+  return el('div', 'flex w-full flex-col items-center justify-center gap-2 px-4 text-center ' + (full ? 'min-h-screen' : 'py-8'), {},
+    el('h1', 'text-heading', { text: title }),
+    el('p', 'max-w-xs text-small text-muted', { text: detail }),
+    el('button', 'btn-primary mt-3 w-full max-w-xs', { text: 'Retry', onclick: retry }));
 }
 
 // ── Shop setup (no shop yet) ─────────────────────────────────────────────
@@ -318,7 +346,7 @@ function renderSetup(message) {
     }
   });
 
-  root.replaceChildren(el('main', 'mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10', {},
+  root.replaceChildren(el('main', 'mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-10 pt-12', {},
     el('div', '', {},
       el('h1', 'text-title', { text: 'Set up your shop' }),
       el('p', 'text-body text-muted', { text: 'Name it, pick the currency prices are in, and check the time zone. You become its Owner.' })),
@@ -361,11 +389,17 @@ function render(tab, sub) {
   const root = document.getElementById('app');
   const tabs = allowedTabs();
   const oneTab = tabs.length === 1;
-  const main = el('main', 'mx-auto flex w-full max-w-3xl flex-col pb-24');
-  const wrap = el('div', 'min-h-screen flex flex-col', {});
+  // The register fills the viewport: the grid scrolls in its own area and
+  // the receipt is docked, so the tab bar sits in the flow below it instead
+  // of floating over the content.
+  const docked = tab.key === 'register';
+  const main = docked
+    ? el('main', 'flex min-h-0 w-full flex-1 flex-col overflow-hidden')
+    : el('main', 'mx-auto flex w-full max-w-3xl flex-col pb-24');
+  const wrap = el('div', docked ? 'flex h-dvh flex-col overflow-hidden' : 'min-h-screen flex flex-col', {});
   wrap.append(main);
   if (!oneTab) {
-    const bar = el('nav', 'tabbar fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl', { 'aria-label': 'Tabs' });
+    const bar = el('nav', 'tabbar z-30 shrink-0' + (docked ? '' : ' fixed inset-x-0 bottom-0 mx-auto max-w-3xl'), { 'aria-label': 'Tabs' });
     for (const t of tabs) {
       const b = el('a', 'tabbar-btn' + (t.key === tab.key ? ' tabbar-on' : ''), { href: '#' + t.key });
       b.append(icon(t.key, 'h-5 w-5'), el('span', '', { text: t.label }));
@@ -383,7 +417,7 @@ function render(tab, sub) {
 
 function demoLine() {
   return state.shop.is_demo
-    ? el('p', 'bg-raised px-4 py-2.5 text-small text-muted', {},
+    ? el('p', 'shrink-0 bg-raised px-4 py-2.5 text-small text-muted', {},
         el('strong', 'font-semibold text-fg', { text: 'Staging demo. ' }),
         'A made-up coffee shop. Sales you record here stay in staging.')
     : null;
@@ -397,16 +431,21 @@ function screenHeader(titleEl, right) {
 }
 
 // ── Register ─────────────────────────────────────────────────────────────
+// The main fills the viewport height. The grid scrolls inside its own area;
+// the receipt is docked below it, full width on a phone (16 px margins) and
+// a full-height right column on a tablet or desktop.
 function renderRegister(main) {
   const shop = state.shop;
-  const header = el('div', '', {});
+  const header = el('div', 'shrink-0', {});
   const titleBox = el('div', '', {});
-  titleBox.append(
-    el('button', 'text-heading font-semibold', {
-      text: shop.name,
-      onclick: (e) => shopMenu(e.currentTarget),
-      'aria-haspopup': 'menu',
-    }),
+  const shopBtn = el('button', '-ml-1 flex min-h-11 items-center gap-1 text-heading font-semibold', {
+    text: shop.name,
+    onclick: (e) => shopMenu(e.currentTarget),
+    'aria-haspopup': 'menu',
+    'aria-label': shop.name + ' — switch shop',
+  });
+  shopBtn.append(icon('chev', 'h-4 w-4 shrink-0 rotate-90 text-muted'));
+  titleBox.append(shopBtn,
     el('p', 'text-small text-muted', { text: 'You, ' + shop.role.name }));
   const right = el('div', 'flex items-center gap-2', {});
   if (can('products')) {
@@ -416,17 +455,15 @@ function renderRegister(main) {
   }
   header.append(screenHeader(titleBox, right));
 
-  const chips = el('div', 'flex gap-2 overflow-x-auto px-4 py-3');
-  const gridWrap = el('div', 'px-4 pb-4');
-  const receiptHolder = el('div', 'sticky z-20 self-end md:w-80 md:shrink-0', {
-    style: 'bottom:calc(64px + env(safe-area-inset-bottom, 0px))',
-  });
-  const leftCol = el('div', 'min-w-0 flex-1');
+  const chips = el('div', 'flex shrink-0 gap-2 overflow-x-auto px-4 py-3');
+  const gridWrap = el('div', 'min-h-0 flex-1 overflow-y-auto px-4 pb-4');
+  const receiptCol = el('div', 'flex min-h-0 shrink-0 flex-col px-4 pb-3 pt-2 md:w-[360px] md:border-l md:border-line md:px-5 md:pb-4 md:pt-4');
+  const leftCol = el('div', 'flex min-h-0 min-w-0 flex-1 flex-col');
   leftCol.append(header, chips, gridWrap);
-  const layout = el('div', 'flex flex-1 flex-col md:flex-row md:items-start md:gap-6', {});
-  layout.append(leftCol, receiptHolder);
+  const body = el('div', 'flex min-h-0 flex-1 flex-col md:flex-row');
+  body.append(leftCol, receiptCol);
 
-  main.append(demoLine(), layout);
+  main.append(demoLine(), body);
 
   const renderChips = () => {
     clear(chips);
@@ -452,7 +489,7 @@ function renderRegister(main) {
         can('products') ? el('button', 'btn-secondary mt-2', { text: 'Add product', onclick: () => openProductEditor(null) }) : null));
       return;
     }
-    const grid = el('div', 'grid grid-cols-3 gap-2');
+    const grid = el('div', 'grid grid-cols-3 gap-2 md:grid-cols-4 xl:grid-cols-6');
     const counts = {};
     for (const it of state.receipt) counts[it.productId] = (counts[it.productId] || 0) + it.qty;
     for (const p of products) {
@@ -472,11 +509,11 @@ function renderRegister(main) {
   };
 
   const renderReceipt = () => {
-    clear(receiptHolder);
+    clear(receiptCol);
     const total = state.receipt.reduce((a, it) => a + it.priceCents * it.qty, 0);
     const count = state.receipt.reduce((a, it) => a + it.qty, 0);
-    const paper = el('div', 'receipt border-t border-line', { 'data-receipt': '' });
-    const head = el('div', 'flex min-h-11 items-center gap-3 text-small text-muted');
+    const paper = el('div', 'receipt flex flex-col border-t border-line md:flex-1', { 'data-receipt': '' });
+    const head = el('div', 'flex min-h-11 shrink-0 items-center gap-3 text-small text-muted');
     head.append(
       el('span', 'font-semibold text-fg', { text: saleLabel(shop.next_sale_no) }),
       el('span', '', { text: count ? count + (count === 1 ? ' item' : ' items') : '' }));
@@ -489,7 +526,7 @@ function renderRegister(main) {
     if (!state.receipt.length) {
       paper.append(el('p', 'py-2 text-small text-muted', { text: 'Tap a product to start a sale' }));
     } else {
-      const lines = el('div', 'max-h-56 overflow-y-auto');
+      const lines = el('div', 'max-h-56 overflow-y-auto md:min-h-0 md:max-h-none md:flex-1');
       for (const it of state.receipt) {
         const line = el('div', 'receipt-line', {});
         const minus = el('button', '-ml-3 flex h-11 w-11 items-center justify-center text-muted', { 'aria-label': 'Remove one ' + it.name, onclick: () => {
@@ -506,13 +543,13 @@ function renderRegister(main) {
       }
       paper.append(lines);
     }
-    const totalRow = el('div', 'mt-2 flex items-baseline justify-between border-t-2 border-dashed border-muted/50 pt-2.5', {});
+    const totalRow = el('div', 'mt-2 flex shrink-0 items-baseline justify-between border-t-2 border-dashed border-muted/50 pt-2.5', {});
     totalRow.append(el('span', 'text-body', { text: 'Total' }), el('b', 'text-title tabular-nums', { text: money(total) }));
     paper.append(totalRow);
-    const charge = el('button', 'btn-primary mt-3 w-full text-body font-semibold', { style: 'height:52px', text: 'Charge ' + money(total), onclick: () => openCharge(total) });
+    const charge = el('button', 'btn-primary mt-3 w-full shrink-0 text-body font-semibold', { style: 'height:52px', text: 'Charge ' + money(total), onclick: () => openCharge(total) });
     if (!state.receipt.length) charge.disabled = true;
     paper.append(charge);
-    receiptHolder.append(paper);
+    receiptCol.append(paper);
   };
 
   state._renderGrid = renderGrid;
@@ -520,10 +557,10 @@ function renderRegister(main) {
   state._renderChips = renderChips;
 
   if (!state.catalog) {
-    gridWrap.append(el('div', 'grid grid-cols-3 gap-2', {},
-      ...Array.from({ length: 6 }, () => el('div', 'skeleton h-28'))));
+    gridWrap.append(el('div', 'grid grid-cols-3 gap-2 md:grid-cols-4 xl:grid-cols-6', {},
+      ...Array.from({ length: 9 }, () => el('div', 'skeleton h-[108px] rounded-xl'))));
     loadCatalog().then(() => { if (state._renderGrid) { renderChips(); renderGrid(); renderReceipt(); } })
-      .catch(() => { clear(gridWrap); gridWrap.append(errorState('Couldn’t load the products.', () => { clear(gridWrap); gridWrap.append(el('div', 'skeleton h-12')); loadCatalog().then(() => { renderChips(); renderGrid(); renderReceipt(); }).catch(() => renderRegister(main)); })); });
+      .catch(() => { clear(gridWrap); gridWrap.append(errorState('Couldn’t load the products', 'The product list didn’t come back. The register itself still works.', () => { clear(gridWrap); gridWrap.append(el('div', 'skeleton h-12')); loadCatalog().then(() => { renderChips(); renderGrid(); renderReceipt(); }).catch(() => renderRegister(main)); })); });
   } else {
     renderChips(); renderGrid();
   }
@@ -891,7 +928,7 @@ function renderSummary(holder) {
       body.append(grid, after, el('p', 'section-label mt-4', { text: 'Paid by method' }), methods, npo);
     }).catch(() => {
       clear(body);
-      body.append(errorState('Couldn’t load the summary. Your sales are safe.', () => render()));
+      body.append(errorState('Couldn’t load the summary', 'The numbers didn’t come back. Your recorded sales are safe.', () => render()));
     });
   };
   render();
@@ -934,7 +971,7 @@ function renderTransactions(holder) {
     }
   }).catch(() => {
     clear(body);
-    body.append(errorState('Couldn’t load the transactions.', () => renderTransactions(holder)));
+    body.append(errorState('Couldn’t load the transactions', 'The sales list didn’t come back. Try again.', () => renderTransactions(holder)));
   });
 }
 
@@ -993,7 +1030,7 @@ function openSale(s) {
     };
     holder.append(el('div', 'skeleton h-40'));
     api('/shops/' + state.shop.id + '/sales/' + s.id).then((d) => renderItems(d.items, d.sale))
-      .catch(() => { clear(holder); holder.append(errorState('Couldn’t load that sale.', () => openSale(s))); });
+      .catch(() => { clear(holder); holder.append(errorState('Couldn’t load that sale', 'The sale’s details didn’t come back. Try again.', () => openSale(s))); });
   });
 }
 
@@ -1036,7 +1073,7 @@ function renderPayouts(holder) {
     body.append(list);
   }).catch(() => {
     clear(body);
-    body.append(errorState('Couldn’t load the payouts.', () => renderPayouts(holder)));
+    body.append(errorState('Couldn’t load the payouts', 'The payout list didn’t come back. Try again.', () => renderPayouts(holder)));
   });
 }
 
@@ -1161,7 +1198,7 @@ function renderInsights(main) {
       }
     }).catch(() => {
       clear(body);
-      body.append(errorState('Couldn’t load the insights.', () => render()));
+      body.append(errorState('Couldn’t load the insights', 'The numbers didn’t come back. Try again.', () => render()));
     });
   };
   render();
@@ -1221,7 +1258,7 @@ function renderStaff(main) {
     body.append(el('button', 'btn-secondary w-full', { text: 'Shop details', onclick: () => openShopDetails(() => renderStaff(main)) }));
   }).catch(() => {
     clear(body);
-    body.append(errorState('Couldn’t load the staff.', () => renderStaff(main)));
+    body.append(errorState('Couldn’t load the staff', 'The staff list didn’t come back. Try again.', () => renderStaff(main)));
   });
 }
 const PERMS_LIST = ['register', 'products', 'finance', 'insights', 'staff'];
