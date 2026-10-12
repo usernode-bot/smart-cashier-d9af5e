@@ -1,27 +1,34 @@
 # Smart Cashier
 
-> **Starter template** — this repo was scaffolded by Homeroom Social
-> Vibecoding. Everything in it is placeholder example code until the
-> app's first real feature is built.
+A simple point of sale for small merchants, with staff roles. Built for
+the Homeroom platform.
 
-The scaffold is a small working demo that proves the plumbing works:
+The owner sets up the shop once: name, currency (30 to choose from, from
+ringgit to rupiah to naira) and time zone. After that the register screen
+is the whole daily job: tap products onto a paper receipt, tap Charge,
+record how the customer paid (cash with change given, card, or QR). Sales
+land in Finance, where the owner sees a summary, every transaction, and
+logs cash payouts. Insights shows sales per day, best sellers and the
+busiest hours so the owner knows when to schedule staff.
 
-- **Sign-in** — the server verifies the platform-issued user token
-  (an RS256 JWT) on every request, so the app already knows who is
-  using it. No accounts to build.
-- **Database** — the app has its own private Postgres database, ready
-  to store things.
-- **Styling** — Tailwind CSS, precompiled by `npm run build` during
-  image creation with either Kubernetes/Paketo or standalone Docker, in a
-  light and a dark look that follow the viewer's Homeroom theme.
+Every person signed in to the shop has a role: Owner (always everything),
+or roles the owner defines with any mix of five permissions: register,
+products, finance, insights and staff. A cashier sees only the register;
+a manager can see finance without being able to change staff.
 
-## Replacing the template
+On staging, open the app with `?demo=1` to walk through a made-up demo
+shop, Senja Coffee Corner, seeded with products, staff and about two
+weeks of sales.
 
-To change this app, ask Homeroom bot: open the app on Homeroom, tap the
-Homeroom icon in the header, then **Suggest an improvement**, and describe
-the app you want in plain English. The template will be replaced with your
-real app. You can also run
-Claude Code against this repo directly; start with `CLAUDE.md`, which
-carries the app-specific notes and points at the platform rules.
+## Layout
 
-Once the real app exists, rewrite this README to describe it.
+- `server.js` and `lib/` — Express API, schema, demo seed, stats helpers
+- `public/` — the single-page front end (vanilla JS, no framework)
+- `test/` — unit tests for money, stats and permission rules (`npm test`)
+- `design/sketch.json` — the screen sketches this build followed
+
+## Platform notes
+
+Sign-in, the database and staging all work the Homeroom way; see
+`CLAUDE.md` for app-specific conventions and
+https://app.onhomeroom.com/claude.md for the platform rules.

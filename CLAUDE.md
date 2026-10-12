@@ -97,24 +97,36 @@ tables you've marked private), etc.
 
 ## About Smart Cashier
 
-Point of sale for small merchants, with staff roles
-
-_(add a sentence or two more of product context here so Claude Code has a
-shared understanding of what this app is for)_
+Point of sale for small merchants, with staff roles. The daily job is the
+register screen: tap products onto a paper receipt, tap Charge, record how
+the customer paid (cash with change given, card, or QR). Finance keeps the
+summary, every transaction and cash payouts; Insights shows sales per day,
+best sellers and busiest hours. Every person in the shop has a role the
+owner defines with any mix of five permissions (register, products,
+finance, insights, staff); Owner always has everything and cannot be
+removed or edited. The currency is chosen at shop setup (30 codes, each
+with its own digits and symbol), so the app is usable worldwide, not one
+country only.
 
 ## Design
 
 This app's look. The first real version fills in the blanks; every later
 change follows it, and updates it when a request changes the look on purpose.
 
-- **Palette:** _(name the accent, any second colour and the neutrals, e.g.
-  "accent: tomato red; second: basil green; neutrals: warm greys")_
-- **Signature element:** _(the one thing on screen drawn from this app's
-  subject, which no other app would have)_
+- **Palette:** accent is "paid" green (a deep market green in light, a
+  brighter signal green in dark); neutrals are cool counter-top greys;
+  the receipt uses a warm paper token in both looks. Danger red is the
+  only other colour.
+- **Signature element:** the printed receipt. It is the paper ticket the
+  shop hands over: scalloped top edge, receipt (mono) type, dotted leaders
+  between item and price, dashed rule above the total. It appears docked
+  on the register, in the charge sheet and as the sale detail in Finance.
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`
   _(change their sizes in `tailwind.config.js` if you must, not their number)_
-- **One fixed look:** _(only for an app drawn as its own scene, such as a
-  game: which look, and why. Otherwise delete this line.)_
+
+Category chips and product tiles draw their category colours from six
+tokens (`cat-red`, `cat-amber`, `cat-teal`, `cat-blue`, `cat-plum`,
+`cat-slate`), used only as tint and dot colour, never for text.
 
 The kit is in `styles/tailwind-input.css`: colour tokens with a light and
 a dark value (named in `tailwind.config.js`), and a few components
@@ -139,6 +151,26 @@ Re-theme by changing the token values there, keeping every text pair at
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- **Money is integer hundredths everywhere.** Every amount column is
+  BIGINT and holds hundredths of the currency unit regardless of the
+  currency's own decimals: RM 4.50 is 450, Rp 15.000 is 1500000. Only
+  `public/money.js` knows each currency's digits (0 for IDR/JPY/VND/KRW/
+  TWD, 2 for the rest) and formats or parses text. Never store floats.
+- **Times are shown in the shop's time zone**, from `shops.time_zone`,
+  and all period maths starts from `req.now` (the platform preview
+  time), never the server clock or `NOW()`.
+- **All sales, payout and staff tables are `staging:private`** (see the
+  `COMMENT ON TABLE` lines in `lib/schema.js`). Keep it that way for any
+  new table that holds shop activity.
+- **Demo data only through `?demo=1`.** `lib/demo.js` seeds the demo shop
+  when `IS_STAGING && req.query.demo === '1'`, guarded by an advisory
+  lock and an `ON CONFLICT DO NOTHING`. Never return or create demo data
+  without the flag.
+- **Permission keys:** `register`, `products`, `finance`, `insights`,
+  `staff` (boolean `can_*` columns on `roles`). The Owner role's columns
+  are ignored; it always has everything. `lib/api.js` exports pure
+  `can()` and `checkRoleChange()` helpers, unit-tested in
+  `test/permissions.test.js`.
+- **Products and categories are archived, never hard-deleted**; sales
+  keep their prices as recorded at sale time (the server reprices from
+  the current catalog when a sale is posted).

@@ -6,5 +6,14 @@
   "secrets": [],
   "governance": {
     "preset": "you_or_the_group"
-  }
+  },
+  "tests": [
+    { "id": "register.demo", "name": "Register with demo shop", "path": "/?demo=1#register", "expectSelector": "[data-receipt]", "visual": true, "impact": ["public/**", "styles/**", "server.js", "lib/**"] },
+    { "id": "setup.empty", "name": "Setup on an empty shop list", "path": "/", "expectText": "Set up your shop" },
+    { "id": "finance.summary", "name": "Finance summary", "path": "/?demo=1#finance/summary", "expectSelector": "[data-finance-summary]" },
+    { "id": "finance.transactions", "name": "Finance transactions", "path": "/?demo=1#finance/transactions", "expectText": "Sale #" },
+    { "id": "finance.payouts", "name": "Finance payouts", "path": "/?demo=1#finance/payouts", "expectText": "Log payout" },
+    { "id": "insights.demo", "name": "Insights", "path": "/?demo=1#insights", "expectText": "Best sellers" },
+    { "id": "staff.demo", "name": "Staff with roles", "path": "/?demo=1#staff", "expectText": "Shift lead" }
+  ]
 }

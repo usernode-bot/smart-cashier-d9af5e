@@ -55,6 +55,17 @@ module.exports = {
         danger: token('danger'),
         'on-danger': token('on-danger'),
         focus: token('focus'), // the keyboard focus ring
+        paper: token('paper'), // the receipt
+        'cat-red': token('cat-red'), // category colours (never for text)
+        'cat-amber': token('cat-amber'),
+        'cat-teal': token('cat-teal'),
+        'cat-blue': token('cat-blue'),
+        'cat-plum': token('cat-plum'),
+        'cat-slate': token('cat-slate'),
+      },
+      fontFamily: {
+        sans: ['system-ui', '-apple-system', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        receipt: ['ui-monospace', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
       // The type scale: four sizes, and nothing in between.
       fontSize: {
