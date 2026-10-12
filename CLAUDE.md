@@ -174,3 +174,7 @@ Re-theme by changing the token values there, keeping every text pair at
 - **Products and categories are archived, never hard-deleted**; sales
   keep their prices as recorded at sale time (the server reprices from
   the current catalog when a sale is posted).
+- **Google and Apple sign-in link to Homeroom accounts only** (never
+  replace them); the `social_identities`, `oauth_states` and `app_keys`
+  tables are private, and the provider keys are optional secrets — unset,
+  the buttons show a not-set-up state.

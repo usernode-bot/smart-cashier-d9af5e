@@ -50,7 +50,10 @@ const ICONS = {
   close: 'M6 6l12 12M18 6L6 18',
   chev: 'M9 6l6 6-6 6',
   trash: 'M4 7h16|M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2|M6 7l1 13h10l1-13',
-  pencil: 'M4 20h4L19 9l-4-4L4 16z|M13 7l4 4',
+  pencil: 'M4 20h4L19 9l-4-4L4 16z',
+  lock: 'M7 11V8a5 5 0 0 1 10 0v3|M5 11h14v10H5z|M12 15v2',
+  google: 'M20 12a8 8 0 1 1-2.3-5.6|M20 12h-7',
+  apple: 'M12 7.5C9.5 5.5 6 6.5 6 10.5c0 4 3 7.5 5 7.5.7 0 1-.5 1-.5s.3.5 1 .5c2 0 5-3.5 5-7.5 0-4-3.5-5-6-3z|M12 7.5c0-2 1.2-3.3 3-4',
 };
 function icon(name, cls) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -266,10 +269,7 @@ async function boot() {
   }
   state.me = me;
   if (me.guest) {
-    root.replaceChildren(el('div', 'state-empty min-h-screen justify-center', {},
-      icon('register', 'h-10 w-10 text-muted'),
-      el('h1', 'text-heading', { text: 'Sign in to Homeroom' }),
-      el('p', 'max-w-xs text-body text-muted', { text: 'Sign in to Homeroom to use Smart Cashier.' })));
+    renderGuest(me);
     return;
   }
   if (!me.shops.length) {
@@ -280,6 +280,51 @@ async function boot() {
   loadTicket();
   route();
   window.addEventListener('hashchange', route);
+}
+
+// The signed-out screen at the app's own address: sign in with Homeroom
+// (which also makes a new account) or continue with a linked social
+// account. A ?signin= code from a failed social redirect explains itself
+// above the buttons.
+const SIGNIN_ERRORS = {
+  not_linked: 'That account isn’t linked to anyone here yet. Sign in with Homeroom, then link it under Sign-in methods.',
+  not_set_up: 'Social sign-in isn’t set up for this app yet.',
+  cancelled: 'Sign-in was cancelled.',
+  expired: 'Sign-in was cancelled.',
+};
+
+function renderGuest(me) {
+  const root = document.getElementById('app');
+  const code = me.signin || new URLSearchParams(location.search).get('signin');
+  const configured = (me.google && me.google.configured) || (me.apple && me.apple.configured);
+  const socialBtn = (provider, label) => {
+    if (me[provider] && me[provider].configured) {
+      return el('a', 'btn-secondary', { href: '/api/auth/oauth/signin?provider=' + provider }, icon(provider, 'h-5 w-5'), label);
+    }
+    const b = el('button', 'btn-secondary', { disabled: 'true' }, icon(provider, 'h-5 w-5'), label);
+    b.disabled = true;
+    return b;
+  };
+  root.replaceChildren(el('div', 'state-empty min-h-screen justify-center', {},
+    icon('register', 'h-10 w-10 text-muted'),
+    el('h1', 'text-heading', { text: 'Sign in to Smart Cashier' }),
+    el('p', 'max-w-xs text-body text-muted', { text: 'Use your Homeroom account, or an account you’ve linked to it.' }),
+    code && SIGNIN_ERRORS[code] ? el('p', 'max-w-xs text-small text-danger', { text: SIGNIN_ERRORS[code] }) : null,
+    el('div', 'mt-2 flex w-full max-w-xs flex-col gap-2', {},
+      el('button', 'btn-primary', {
+        text: 'Sign in with Homeroom',
+        onclick: () => {
+          if (window.usernode && typeof window.usernode.askForAccount === 'function') {
+            window.usernode.askForAccount({ action: 'use Smart Cashier' });
+          } else {
+            location.reload();
+          }
+        },
+      }),
+      socialBtn('google', 'Continue with Google'),
+      socialBtn('apple', 'Continue with Apple')),
+    !configured ? el('p', 'max-w-xs text-small text-muted', { text: 'Google and Apple sign-in aren’t set up for this app yet.' }) : null,
+    el('p', 'max-w-xs text-small text-muted', { text: 'No account yet? Sign in with Homeroom to make one. It becomes your Smart Cashier account.' })));
 }
 
 // A load failure: a centred block with a heading-size line, one small muted
@@ -373,6 +418,13 @@ function route() {
     return;
   }
   const tab = tabs.find((t) => t.key === head);
+  if (head === 'sign-in-methods') {
+    // A deep link straight to the sheet: render the first allowed screen
+    // behind it, then open the sheet on top.
+    render(tabs[0].key, undefined);
+    openSignInMethods();
+    return;
+  }
   if (!tab) { location.replace('#' + tabs[0].key); return; }
   if (tab.key === 'finance') {
     if (!['summary', 'transactions', 'payouts'].includes(sub)) {
@@ -583,19 +635,214 @@ async function loadCatalog() {
 
 function shopMenu(anchor) {
   const shops = state.me.shops;
-  if (shops.length < 2 && !wantsDemo()) return;
   const menu = el('div', 'fixed inset-0 z-50', { onclick: () => menu.remove() });
   const list = el('div', 'absolute bottom-4 left-4 right-4 mx-auto max-w-sm rounded-xl border border-line bg-surface p-2 shadow-2xl');
-  list.append(el('p', 'section-label', { text: 'Shops' }));
-  for (const s of shops) {
-    const b = el('button', 'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-body' + (s.id === state.shop.id ? ' font-semibold' : ''), {
-      onclick: async () => { menu.remove(); state.shop = s; state.catalog = null; state.receipt = null; loadTicket(); location.hash = '#' + (allowedTabs()[0].key); route(); },
+  // The shop list only earns its place with two or more shops to pick.
+  if (shops.length >= 2 || wantsDemo()) {
+    list.append(el('p', 'section-label', { text: 'Shops' }));
+    for (const s of shops) {
+      const b = el('button', 'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-body' + (s.id === state.shop.id ? ' font-semibold' : ''), {
+        onclick: async () => { menu.remove(); state.shop = s; state.catalog = null; state.receipt = null; loadTicket(); location.hash = '#' + (allowedTabs()[0].key); route(); },
+      });
+      b.append(icon('register', 'h-5 w-5 text-muted'), s.name);
+      list.append(b);
+    }
+    list.append(el('div', 'mx-1 my-1 border-t border-line'));
+  }
+  list.append(el('p', 'section-label mb-0', { text: 'Your account' }));
+  const signin = el('button', 'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-body', {
+    onclick: () => { menu.remove(); openSignInMethods(); },
+  });
+  signin.append(icon('lock', 'h-5 w-5 text-muted'), 'Sign-in methods');
+  list.append(signin);
+  if (state.me.signedInWith === 'google' || state.me.signedInWith === 'apple') {
+    const out = el('button', 'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-body', {
+      onclick: async () => {
+        menu.remove();
+        try {
+          await api('/auth/oauth/signout', { method: 'POST' });
+        } catch (_) {}
+        location.replace('/');
+      },
     });
-    b.append(icon('register', 'h-5 w-5 text-muted'), s.name);
-    list.append(b);
+    out.append(icon('close', 'h-5 w-5 text-muted'), 'Sign out');
+    list.append(out);
   }
   menu.append(list);
   document.getElementById('app').append(menu);
+}
+
+// ── Sign-in methods ──────────────────────────────────────────────────────
+// Which ways this person can sign in: Homeroom (always on) and any social
+// account they've linked. Linking opens the provider in a small popup; the
+// sheet polls the server for the outcome, so it never relies on
+// window.opener (storage is partitioned inside the frame).
+const PROVIDER_LABEL = { google: 'Google', apple: 'Apple' };
+const LINK_ERRORS = {
+  taken: 'That account is already linked to someone else.',
+  already_linked: 'You already have an account of this kind linked. Unlink it first.',
+  unverified: 'The provider hasn’t confirmed that account’s email, so it can’t be linked.',
+  expired: 'Linking was cancelled.',
+  cancelled: 'Linking was cancelled.',
+};
+
+let signinSheet = null; // the open Sign-in methods sheet, to close on refresh
+
+function openSignInMethods() {
+  if (signinSheet) signinSheet.close();
+  const sheet = openSheet('Sign-in methods', (body) => {
+    body.setAttribute('data-signin-methods', '');
+    body.append(el('p', 'text-body text-muted', {
+      text: 'Ways you can sign in to Smart Cashier as ' + state.me.user.username + '.',
+    }));
+    const holder = el('div', '', {});
+    body.append(holder);
+    body.append(el('p', 'text-small text-muted', {
+      text: 'Once linked, you can open Smart Cashier at its own address and choose that account to sign in. Your shops, role and sales stay the same.',
+    }));
+
+    const render = (data) => {
+      clear(holder);
+      const rows = el('ul', 'list', {});
+      rows.append(el('li', 'list-row justify-between', {},
+        el('div', 'flex flex-col', {},
+          el('span', 'text-body', { text: 'Homeroom' }),
+          el('span', 'text-small text-muted', { text: 'Your main account' })),
+        el('span', 'text-small font-medium text-accent', { text: 'On' })));
+      for (const p of data.providers) {
+        const label = PROVIDER_LABEL[p.provider] || p.provider;
+        const smallLine = p.linked ? p.linked.email
+          : (p.configured ? 'Not linked' : 'Not set up yet');
+        const action = p.linked
+          ? el('button', 'btn-secondary', { text: 'Unlink', onclick: () => unlinkProvider(p, data) })
+          : el('button', 'btn-secondary', {
+              text: 'Link',
+              onclick: () => linkProvider(p, render),
+              disabled: p.configured ? undefined : 'true',
+            });
+        if (!p.configured && !p.linked) action.disabled = true;
+        rows.append(el('li', 'list-row justify-between', {},
+          el('div', 'flex flex-col', {},
+            el('span', 'text-body', { text: label }),
+            el('span', 'text-small text-muted', { text: smallLine })),
+          action));
+      }
+      holder.append(rows);
+
+      // The not-set-up note, and the redirect address an Owner can paste
+      // into the provider's console.
+      for (const p of data.providers) {
+        if (p.configured) continue;
+        const label = PROVIDER_LABEL[p.provider] || p.provider;
+        const note = el('div', 'mt-3 rounded-xl bg-raised p-4', {},
+          el('p', 'text-body', { text: label + ' sign-in isn’t set up for this app yet.' }),
+          el('p', 'text-small text-muted', {
+            text: 'The app’s admins add ' + (label === 'Apple' ? 'an' : 'a') + ' ' + label + ' client ID and secret in Homeroom, under the app’s Secrets. In the provider’s console, use this as the redirect address:',
+          }));
+        if (data.callbackUrl) {
+          note.append(el('code', 'mt-2 block break-all font-receipt text-small', { text: data.callbackUrl }));
+        }
+        holder.append(note);
+      }
+    };
+
+    holder.append(el('div', 'flex flex-col gap-2', {},
+      el('div', 'skeleton h-14'),
+      el('div', 'skeleton h-14')));
+    api('/auth/oauth/methods').then(render).catch(() => {
+      clear(holder);
+      holder.append(errorState('Couldn’t load your sign-in methods',
+        'Your shops and sales are fine. Try again.',
+        () => {
+          clear(holder);
+          holder.append(el('div', 'skeleton h-14'));
+          api('/auth/oauth/methods').then(render).catch(() => openSignInMethods());
+        }));
+    });
+  });
+  signinSheet = sheet;
+  return sheet;
+}
+
+function linkProvider(p) {
+  const label = PROVIDER_LABEL[p.provider] || p.provider;
+  // Open the popup synchronously inside the tap: a later call is what
+  // browsers block.
+  const popup = window.open('', 'sc-' + p.provider, 'width=480,height=640');
+  const sheetBody = document.querySelector('[data-signin-methods]');
+  const showError = (text, retry) => {
+    if (!sheetBody) return;
+    let box = sheetBody.querySelector('[data-link-error]');
+    if (!box) {
+      box = el('div', 'rounded-xl bg-raised p-4', { 'data-link-error': '' });
+      sheetBody.insertBefore(box, sheetBody.lastChild);
+    }
+    clear(box);
+    box.append(el('p', 'text-body', { text }));
+    if (retry) box.append(el('button', 'btn-secondary mt-2', { text: 'Try again', onclick: () => { box.remove(); linkProvider(p); } }));
+  };
+  api('/auth/oauth/start', { method: 'POST', body: { provider: p.provider } })
+    .then((r) => {
+      if (!popup) {
+        showError('Your browser blocked the ' + label + ' window. Allow pop-ups for this app and try again.', true);
+        return;
+      }
+      popup.location = r.url;
+      const stateValue = r.state;
+      const started = Date.now();
+      let closedSeen = false;
+      const timer = setInterval(async () => {
+        if (Date.now() - started > 10 * 60 * 1000) { clearInterval(timer); return; }
+        let st;
+        try { st = await api('/auth/oauth/status?state=' + encodeURIComponent(stateValue)); }
+        catch (_) { return; }
+        if (st.status === 'done') {
+          clearInterval(timer);
+          if (popup && !popup.closed) popup.close();
+          toast(label + ' linked');
+          openSignInMethods(); // a fresh sheet with the fresh answer
+          return;
+        }
+        if (st.status === 'failed') {
+          clearInterval(timer);
+          if (popup && !popup.closed) popup.close();
+          showError(LINK_ERRORS[st.error] || 'The provider didn’t answer. Try again.',
+            st.error !== 'cancelled' && st.error !== 'expired');
+          return;
+        }
+        if (popup.closed) {
+          if (!closedSeen) { closedSeen = true; return; } // poll once more
+          clearInterval(timer);
+          showError('Linking was cancelled.', true);
+        }
+      }, 1500);
+    })
+    .catch((err) => {
+      if (popup) popup.close();
+      showError(err.data && err.data.error === 'not_configured'
+        ? label + ' sign-in isn’t set up for this app yet.'
+        : 'The provider didn’t answer. Try again.', true);
+    });
+}
+
+function unlinkProvider(p, data) {
+  const label = PROVIDER_LABEL[p.provider] || p.provider;
+  confirmSheet('Unlink ' + label + '?',
+    'You won’t be able to sign in with ' + (p.linked ? p.linked.email : 'it') + ' any more.',
+    'Unlink',
+    async () => {
+      try {
+        await api('/auth/oauth/' + p.provider, { method: 'DELETE' });
+        if (state.me.signedInWith === p.provider) {
+          location.replace('/');
+          return;
+        }
+        toast(label + ' unlinked');
+        openSignInMethods(); // a fresh sheet with the fresh answer
+      } catch (err) {
+        toast(err.message || 'Could not unlink it', true);
+      }
+    });
 }
 
 function confirmSheet(title, message, actionLabel, action) {
@@ -1349,7 +1596,11 @@ function openAddStaff(roles, done) {
         close(); toast(name + ' added'); done();
       } catch (err) {
         save.disabled = false;
-        toast(err.message || 'Could not add them', true);
+        if (err.status === 503 && state.me.signedInWith === 'google') {
+          toast('Username search needs Homeroom sign-in.', true);
+        } else {
+          toast(err.message || 'Could not add them', true);
+        }
       }
     });
   });

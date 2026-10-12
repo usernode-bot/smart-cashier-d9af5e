@@ -3,7 +3,14 @@
   "icon": {
     "emoji": "🧾"
   },
-  "secrets": [],
+  "secrets": [
+    { "key": "GOOGLE_CLIENT_ID", "required": false, "private": false, "description": "OAuth 2.0 Web client ID from Google Cloud console, Credentials" },
+    { "key": "GOOGLE_CLIENT_SECRET", "required": false, "private": true, "description": "OAuth 2.0 client secret from Google Cloud console, Credentials. In Google's console, add the redirect address https://<this app's address>/api/auth/oauth/callback to the client" },
+    { "key": "APPLE_CLIENT_ID", "required": false, "private": false, "description": "Services ID from the Apple Developer console, with Sign in with Apple enabled" },
+    { "key": "APPLE_TEAM_ID", "required": false, "private": false, "description": "Team ID from the Apple Developer console, Membership details" },
+    { "key": "APPLE_KEY_ID", "required": false, "private": false, "description": "Key ID of the Sign in with Apple signing key, Keys" },
+    { "key": "APPLE_PRIVATE_KEY", "required": false, "private": true, "description": "Contents of the .p8 Sign in with Apple signing key (needs an Apple Developer membership). In Apple's console, add the redirect address https://<this app's address>/api/auth/oauth/callback to the Services ID" }
+  ],
   "governance": {
     "preset": "you_or_the_group"
   },
@@ -14,6 +21,7 @@
     { "id": "finance.transactions", "name": "Finance transactions", "path": "/?demo=1#finance/transactions", "expectText": "Sale #" },
     { "id": "finance.payouts", "name": "Finance payouts", "path": "/?demo=1#finance/payouts", "expectText": "Log payout" },
     { "id": "insights.demo", "name": "Insights", "path": "/?demo=1#insights", "expectText": "Best sellers" },
-    { "id": "staff.demo", "name": "Staff with roles", "path": "/?demo=1#staff", "expectText": "Shift lead" }
+    { "id": "staff.demo", "name": "Staff with roles", "path": "/?demo=1#staff", "expectText": "Shift lead" },
+    { "id": "signin.methods", "name": "Sign-in methods, not set up", "path": "/?demo=1#sign-in-methods", "expectSelector": "[data-signin-methods]" }
   ]
 }
