@@ -1,6 +1,7 @@
 {
   "description": "Point of sale for small merchants, with staff roles",
   "icon": {
+    "image": "brand/icon.png",
     "emoji": "🧾"
   },
   "secrets": [
