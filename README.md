@@ -26,6 +26,7 @@ weeks of sales.
 - `public/` — the single-page front end (vanilla JS, no framework)
 - `test/` — unit tests for money, stats and permission rules (`npm test`)
 - `design/sketch.json` — the screen sketches this build followed
+- `brand/` — app icon and featured icons (see `brand/ICON.md`)
 
 ## Platform notes
 
