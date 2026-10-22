@@ -3,6 +3,7 @@ const path = require('path');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const oauth = require('./lib/oauth');
+const { accessDecision } = require('./lib/access');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -21,14 +22,15 @@ const APP_AUDIENCE = process.env.USERNODE_APP_ID
   ? 'usernode:app:' + process.env.USERNODE_APP_ID
   : null;
 
-// Visitors with no Homeroom account ("guests") may look around this app at
-// its own address, read-only (every public app). The platform marks
-// them with a token of their own: ES256, signed by a key of its own (its
-// public half is USERNODE_GUEST_JWT_PUBLIC_KEY), this audience, `pur:
-// 'guest'`, `guest: true`, and no id or username. Such a visitor is
-// `req.guest`, never `req.user`, and every write they try is answered 401
-// `account_required`, which the bridge turns into "Make an account to
-// continue".
+// Visitors with no Homeroom account ("guests") may see this app's sign-in
+// screen at its own address, and nothing else. The platform marks them with
+// a token of their own: ES256, signed by a key of its own (its public half
+// is USERNODE_GUEST_JWT_PUBLIC_KEY), this audience, `pur: 'guest'`,
+// `guest: true`, and no id or username. Such a visitor is `req.guest`, never
+// `req.user`. They may read only GET /api/me (which the sign-in screen needs
+// to know which providers are set up); every other /api/* request they make
+// is answered 401 `account_required`, which the bridge turns into "Make an
+// account to continue". See lib/access.js.
 const GUEST_AUDIENCE = APP_AUDIENCE ? APP_AUDIENCE + ':guest' : null;
 const GUEST_PUBLIC_KEY = (process.env.USERNODE_GUEST_JWT_PUBLIC_KEY || '')
   .replace(/\\n/g, '\n');
@@ -165,18 +167,21 @@ app.use(async (req, res, next) => {
     return res.status(403).json({ error: 'bad_origin' });
   }
 
-  // Static assets (CSS/JS/images) are always served; the API and the HTML
-  // shell are gated so direct hits to the staging/prod subdomain don't
-  // leak app data to the public internet. A guest may READ: every GET,
-  // `/api/*` included, so read routes must not assume req.user (use
-  // `req.user ? req.user.id : null`). Every write needs an account.
-  if (req.method !== 'GET' || req.path.startsWith('/api/')) {
-    if (PUBLIC_API_PATHS.has(req.path)) return next();
-    if (!req.user && req.guest) {
-      if (req.method === 'GET' || req.method === 'HEAD') return next();
-      return res.status(401).json({ error: 'account_required' });
-    }
-    if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+  // Static assets (CSS/JS/images) and the HTML shell are always served; the
+  // API is gated so direct hits to the staging/prod subdomain don't leak app
+  // data to the public internet. A guest sees only the sign-in screen and
+  // reads only /api/me; every other /api/* request from a guest is 401
+  // account_required, so no shop data and no shop ids are reachable without
+  // signing in.
+  const decision = accessDecision({
+    method: req.method,
+    path: req.path,
+    user: req.user,
+    guest: req.guest,
+    publicPaths: PUBLIC_API_PATHS,
+  });
+  if (!decision.allow) {
+    return res.status(decision.status).json({ error: decision.error });
   }
   next();
 });
