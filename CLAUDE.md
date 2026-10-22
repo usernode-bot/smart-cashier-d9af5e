@@ -162,6 +162,10 @@ Re-theme by changing the token values there, keeping every text pair at
 - **All sales, payout and staff tables are `staging:private`** (see the
   `COMMENT ON TABLE` lines in `lib/schema.js`). Keep it that way for any
   new table that holds shop activity.
+- **Guests see only the sign-in screen.** A visitor with no account reads
+  only `GET /api/me`; every other `/api/*` request answers
+  `401 account_required` (`lib/access.js`). Keep new read routes behind
+  that gate, and never assume `req.user` may be missing in a shop route.
 - **Demo data only through `?demo=1`.** `lib/demo.js` seeds the demo shop
   when `IS_STAGING && req.query.demo === '1'`, guarded by an advisory
   lock and an `ON CONFLICT DO NOTHING`. Never return or create demo data
